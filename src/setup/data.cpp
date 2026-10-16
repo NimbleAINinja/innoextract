@@ -20,6 +20,8 @@
 
 #include "setup/data.hpp"
 
+#include <cstdlib>
+
 #include <cstring>
 
 #include "setup/info.hpp"
@@ -73,7 +75,11 @@ void data_entry::load(std::istream & is, const info & i) {
 	}
 	uncompressed_size = file.size;
 	
-	if(i.version >= INNO_VERSION(6, 4, 0)) {
+	if(i.version >= INNO_VERSION(6, 4, 2) && std::getenv("INNOEXTRACT_MOD642")) {
+		// Modified 6.4.2 builds store an MD5 here instead of SHA-256.
+		is.read(file.checksum.md5, std::streamsize(sizeof(file.checksum.md5)));
+		file.checksum.type = crypto::MD5;
+	} else if(i.version >= INNO_VERSION(6, 4, 0)) {
 		is.read(file.checksum.sha256, std::streamsize(sizeof(file.checksum.sha256)));
 		file.checksum.type = crypto::SHA256;
 	} else if(i.version >= INNO_VERSION(5, 3, 9)) {

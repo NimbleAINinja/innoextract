@@ -20,6 +20,8 @@
 
 #include "setup/header.hpp"
 
+#include <cstdlib>
+
 #include <cstdio>
 #include <cstring>
 
@@ -266,6 +268,10 @@ void header::load(std::istream & is, const version & version) {
 		is >> util::binary_string(architectures_allowed_expr);
 		is >> util::binary_string(architectures_installed_in_64bit_mode_expr);
 	}
+	if(version >= INNO_VERSION(6, 4, 2)) {
+		std::string close_applications_filter_excludes;
+		is >> util::binary_string(close_applications_filter_excludes);
+	}
 	if(version >= INNO_VERSION(5, 2, 5)) {
 		is >> util::ansi_string(license_text);
 		is >> util::ansi_string(info_before);
@@ -377,6 +383,12 @@ void header::load(std::istream & is, const version & version) {
 		image_alpha_format = AlphaIgnored;
 	}
 	
+	if(version >= INNO_VERSION(6, 4, 2)) {
+		// Modified 6.4.2 builds (e.g. some repacks) insert 48 zero bytes here; stock 6.4.2 does not.
+		if(std::getenv("INNOEXTRACT_MOD642")) {
+			is.ignore(48);
+		}
+	}
 	if(version >= INNO_VERSION(6, 4, 0)) {
 		is.read(password.sha256, 4);
 		password.type = crypto::PBKDF2_SHA256_XChaCha20;
@@ -475,6 +487,10 @@ void header::load(std::istream & is, const version & version) {
 		compression = stored_enum<stored_compression_method_1>(is).get();
 	} else if(version >= INNO_VERSION(4, 1, 5)) {
 		compression = stored_enum<stored_compression_method_0>(is).get();
+	}
+	if(version >= INNO_VERSION(6, 4, 2) && std::getenv("INNOEXTRACT_MOD642")) {
+		// Modified 6.4.2 builds leave this as 0 but use LZMA2 chunks.
+		compression = stream::LZMA2;
 	}
 	
 	if(version >= INNO_VERSION(6, 3, 0)) {

@@ -20,6 +20,7 @@
 
 #include "stream/block.hpp"
 
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <istream>
@@ -100,7 +101,15 @@ public:
 		actual.init();
 		actual.update(buffer, length);
 		if(actual.finalize() != block_crc32) {
-			throw block_error("block CRC32 mismatch");
+			if(!std::getenv("INNOEXTRACT_MOD642")) {
+				throw block_error("block CRC32 mismatch");
+			}
+			// Modified 6.4.2 builds scramble block CRCs.
+			static bool warned = false;
+			if(!warned) {
+				log_warning << "Ignoring block CRC32 mismatch (further mismatches not reported)";
+				warned = true;
+			}
 		}
 		
 		pos = 0;
@@ -184,7 +193,10 @@ block_reader::pointer block_reader::get(std::istream & base, const setup::versio
 	}
 	
 	if(actual_checksum.finalize() != expected_checksum) {
-		throw block_error("block header CRC32 mismatch");
+		if(!std::getenv("INNOEXTRACT_MOD642")) {
+			throw block_error("block header CRC32 mismatch");
+		}
+		log_warning << "Ignoring block header CRC32 mismatch";
 	}
 	
 	debug("[block] size: " << stored_size << "  compression: " << compression);

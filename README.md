@@ -3,6 +3,12 @@
 
 [Inno Setup](https://jrsoftware.org/isinfo.php) is a tool to create installers for Microsoft Windows applications. innoextract allows to extract such installers under non-Windows systems without running the actual installer using wine. innoextract currently supports installers created by Inno Setup 1.2.10 to 6.3.3.
 
+**Fork note:** this fork also recognises Inno Setup 6.4.2 setup data, and can extract installers built with a *modified* Inno Setup 6.4.2 compiler (as used by some repacks). Those builds scramble block CRCs, insert 48 extra bytes into the setup header, store a 16-byte per-file hash instead of SHA-256, and leave the compression method as "stored" while actually using LZMA2. To handle them, set `INNOEXTRACT_MOD642=1`:
+
+    INNOEXTRACT_MOD642=1 innoextract -e -d outdir setup.exe
+
+Expect one checksum-mismatch warning per file in this mode: the stored per-file hashes do not match MD5, SHA-1 or SHA-256 of the data. Without the variable, behaviour is unchanged from upstream.
+
 In addition to standard Inno Setup installers, innoextract also supports some modified Inno Setup variants including Martijn Laan's My Inno Setup Extensions 1.3.10 to 3.0.6.1 as well as GOG.com's Inno Setup-based game installers. innoextract is able to unpack Wadjet Eye Games installers (to play with AGS), Arx Fatalis patches (for use with Arx Libertatis) as well as various other Inno Setup executables.
 
 innoextract is available under the ZLIB license - see the LICENSE file.
