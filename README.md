@@ -13,6 +13,7 @@ This is a fork of [dscharrer/innoextract](https://github.com/dscharrer/innoextra
   * insert 48 extra (zero) bytes into the setup header before `PasswordTest`
   * store a 16-byte per-file hash instead of SHA-256
   * record the compression method as "stored" while the data chunks actually use LZMA2
+  * in some builds, widen `OffsetEXE`, `Offset0` and `Offset1` in the setup loader offset table to 64 bits while keeping table revision 1 and a 32-bit `TotalSize` (neither the stock 6.4 layout, which is all 32-bit, nor the 6.5 one, which is revision 2 with a 64-bit `TotalSize`). innoextract first reads the stock layout. Only if that points past the end of the file does it fall back to this one, logging `Using modified 6.4.2 loader offset table layout`.
 
 Without `INNOEXTRACT_MOD642`, behaviour is unchanged from upstream: CRC mismatches are still fatal errors.
 
@@ -40,11 +41,19 @@ Stock 6.4.2 installers need no environment variable.
 
 ### What to expect in `INNOEXTRACT_MOD642` mode
 
-* Warnings for `Setup loader checksum mismatch` and `Ignoring block (header) CRC32 mismatch` are expected.
+* Warnings for `Setup loader checksum mismatch` and `Ignoring block (header) CRC32 mismatch` are expected, as is `Using modified 6.4.2 loader offset table layout` for builds that use the wider offset table.
+* If innoextract reports `Could not determine setup data version!` on a 6.4.2 installer, check that `INNOEXTRACT_MOD642=1` is set. Without it, the wider offset table isn't tried.
 * You will get one `Checksum mismatch` warning **per file**. The stored per-file hashes don't match MD5, SHA-1 or SHA-256 of the data, so files can't be verified cryptographically. Check the output structurally instead: every file should be its recorded size (innoextract warns `Unexpected output file size` otherwise), and media files should decode (e.g. `afinfo file.wav` on macOS).
 * Extraction never runs installer code, but the installer's `[Run]`/`[Code]` sections are not reproduced either. You only get the files.
 
-This mode was verified against an Inno Setup 6.4.2 repack with 673 files (~344 MB) in a single LZMA2 solid chunk. All files came out at their recorded sizes, and all 212 WAV files decoded cleanly.
+This mode was verified against two Inno Setup 6.4.2 repacks:
+
+| Installer | Loader table | Files | Size | Result |
+|---|---|---|---|---|
+| ~226 MB | stock 32-bit layout | 673 | ~344 MB | all files at recorded size; 212/212 WAVs decode |
+| ~894 MB | wider 64-bit offsets | 893 | ~1 GB | all files at recorded size; 282/282 WAVs decode |
+
+After the offset-table fallback was added, the first installer was re-extracted and the output compared byte-for-byte identical to the earlier extraction.
 
 ## About innoextract
 

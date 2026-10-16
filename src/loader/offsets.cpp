@@ -20,6 +20,7 @@
 
 #include "loader/offsets.hpp"
 
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 
@@ -153,6 +154,8 @@ bool offsets::load_offsets_at(std::istream & is, boost::uint32_t pos) {
 		}
 	}
 	
+	std::streampos fields_start = is.tellg();
+	
 	(void)checksum.load<boost::uint32_t>(is);
 	exe_offset = checksum.load<boost::uint32_t>(is);
 	
@@ -197,6 +200,40 @@ bool offsets::load_offsets_at(std::istream & is, boost::uint32_t pos) {
 		if(checksum.finalize() != expected) {
 			log_warning << "Setup loader checksum mismatch!";
 		}
+	}
+	
+	if(std::getenv("INNOEXTRACT_MOD642") && version >= INNO_VERSION(5, 1, 5)) {
+		// Some modified 6.4.2 builds keep table revision 1 but widen OffsetEXE, Offset0 and
+		// Offset1 to 64 bits (TotalSize stays 32-bit). Detect this by the stock reading
+		// pointing past the end of the file.
+		std::streampos end = is.seekg(0, std::ios_base::end).tellg();
+		if(is.fail() || end < 0) {
+			is.clear();
+			return true;
+		}
+		boost::uint64_t file_size = boost::uint64_t(end);
+		if(header_offset < file_size && data_offset < file_size) {
+			return true;
+		}
+		is.seekg(fields_start);
+		(void)util::load<boost::uint32_t>(is); // TotalSize
+		boost::uint64_t wide_exe_offset = util::load<boost::uint64_t>(is);
+		exe_uncompressed_size = util::load<boost::uint32_t>(is);
+		exe_checksum.type = crypto::CRC32;
+		exe_checksum.crc32 = util::load<boost::uint32_t>(is);
+		boost::uint64_t wide_header_offset = util::load<boost::uint64_t>(is);
+		boost::uint64_t wide_data_offset = util::load<boost::uint64_t>(is);
+		if(is.fail() || wide_exe_offset >= file_size || wide_header_offset >= file_size
+		   || wide_data_offset >= file_size) {
+			is.clear();
+			debug("modified 6.4.2 loader header is not plausible either");
+			return true;
+		}
+		log_warning << "Using modified 6.4.2 loader offset table layout";
+		exe_offset = boost::uint32_t(wide_exe_offset);
+		exe_compressed_size = 0;
+		header_offset = boost::uint32_t(wide_header_offset);
+		data_offset = boost::uint32_t(wide_data_offset);
 	}
 	
 	return true;
