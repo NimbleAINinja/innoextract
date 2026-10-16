@@ -3,11 +3,50 @@
 
 [Inno Setup](https://jrsoftware.org/isinfo.php) is a tool to create installers for Microsoft Windows applications. innoextract allows to extract such installers under non-Windows systems without running the actual installer using wine. innoextract currently supports installers created by Inno Setup 1.2.10 to 6.3.3.
 
-**Fork note:** this fork also recognises Inno Setup 6.4.2 setup data, and can extract installers built with a *modified* Inno Setup 6.4.2 compiler (as used by some repacks). Those builds scramble block CRCs, insert 48 extra bytes into the setup header, store a 16-byte per-file hash instead of SHA-256, and leave the compression method as "stored" while actually using LZMA2. To handle them, set `INNOEXTRACT_MOD642=1`:
+## About this fork
 
-    INNOEXTRACT_MOD642=1 innoextract -e -d outdir setup.exe
+This is a fork of [dscharrer/innoextract](https://github.com/dscharrer/innoextract) that adds:
 
-Expect one checksum-mismatch warning per file in this mode: the stored per-file hashes do not match MD5, SHA-1 or SHA-256 of the data. Without the variable, behaviour is unchanged from upstream.
+* **Inno Setup 6.4.2 support** (always on): recognises the `Inno Setup Setup Data (6.4.2)` ID and reads the `CloseApplicationsFilterExcludes` header string added in 6.4.2.
+* **Modified 6.4.2 builds** (opt-in via `INNOEXTRACT_MOD642=1`): some repacks are built with a modified Inno Setup 6.4.2 compiler whose output stock innoextract cannot read. These builds:
+  * scramble the CRC32 of every compressed block and block header (deliberately breaking extractors)
+  * insert 48 extra (zero) bytes into the setup header before `PasswordTest`
+  * store a 16-byte per-file hash instead of SHA-256
+  * record the compression method as "stored" while the data chunks actually use LZMA2
+
+Without `INNOEXTRACT_MOD642`, behaviour is unchanged from upstream: CRC mismatches are still fatal errors.
+
+### Build (macOS)
+
+    brew install cmake boost xz
+    git clone https://github.com/NimbleAINinja/innoextract.git
+    cd innoextract && mkdir build && cd build
+    cmake .. -DCMAKE_BUILD_TYPE=Release
+    make -j8
+
+The binary is `build/innoextract`. Note that `brew install --HEAD innoextract` builds *upstream*, not this fork. The binary links against Homebrew's boost and xz dylibs, so rebuild it if a `brew upgrade` breaks it.
+
+### Run
+
+    # Inspect / list a modified 6.4.2 installer
+    INNOEXTRACT_MOD642=1 ./innoextract -i setup.exe
+    INNOEXTRACT_MOD642=1 ./innoextract -l setup.exe
+
+    # Extract into a new, empty directory
+    mkdir outdir
+    INNOEXTRACT_MOD642=1 ./innoextract -e -d outdir setup.exe
+
+Stock 6.4.2 installers need no environment variable.
+
+### What to expect in `INNOEXTRACT_MOD642` mode
+
+* Warnings for `Setup loader checksum mismatch` and `Ignoring block (header) CRC32 mismatch` are expected.
+* You will get one `Checksum mismatch` warning **per file**. The stored per-file hashes don't match MD5, SHA-1 or SHA-256 of the data, so files can't be verified cryptographically. Check the output structurally instead: every file should be its recorded size (innoextract warns `Unexpected output file size` otherwise), and media files should decode (e.g. `afinfo file.wav` on macOS).
+* Extraction never runs installer code, but the installer's `[Run]`/`[Code]` sections are not reproduced either. You only get the files.
+
+This mode was verified against an Inno Setup 6.4.2 repack with 673 files (~344 MB) in a single LZMA2 solid chunk. All files came out at their recorded sizes, and all 212 WAV files decoded cleanly.
+
+## About innoextract
 
 In addition to standard Inno Setup installers, innoextract also supports some modified Inno Setup variants including Martijn Laan's My Inno Setup Extensions 1.3.10 to 3.0.6.1 as well as GOG.com's Inno Setup-based game installers. innoextract is able to unpack Wadjet Eye Games installers (to play with AGS), Arx Fatalis patches (for use with Arx Libertatis) as well as various other Inno Setup executables.
 
