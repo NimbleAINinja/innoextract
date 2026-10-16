@@ -13,7 +13,7 @@ This is a fork of [dscharrer/innoextract](https://github.com/dscharrer/innoextra
   * insert 48 extra (zero) bytes into the setup header before `PasswordTest`
   * store a 16-byte per-file hash instead of SHA-256
   * record the compression method as "stored" while the data chunks actually use LZMA2
-  * in some builds, widen `OffsetEXE`, `Offset0` and `Offset1` in the setup loader offset table to 64 bits while keeping table revision 1 and a 32-bit `TotalSize` (neither the stock 6.4 layout, which is all 32-bit, nor the 6.5 one, which is revision 2 with a 64-bit `TotalSize`). innoextract first reads the stock layout. Only if that points past the end of the file does it fall back to this one, logging `Using modified 6.4.2 loader offset table layout`.
+  * in some builds, widen `OffsetEXE`, `Offset0` and `Offset1` in the setup loader offset table to 64 bits while keeping table revision 1 and a 32-bit `TotalSize` (neither the stock 6.4 layout, which is all 32-bit, nor the 6.5 one, which is revision 2 with a 64-bit `TotalSize`). innoextract first reads the stock layout and checks that `Offset0` lands on the `Inno Setup Setup Data (` signature. Only if it doesn't does it try this layout, applying the same check, and log `Using modified 6.4.2 loader offset table layout`. A simple bounds check isn't enough: in installers over about 1 GB, the misread stock offsets can still fall inside the file. innoextract stores these offsets as 32-bit values, so installers of 4 GB or more aren't supported.
 
 Without `INNOEXTRACT_MOD642`, behaviour is unchanged from upstream: CRC mismatches are still fatal errors.
 
@@ -46,14 +46,18 @@ Stock 6.4.2 installers need no environment variable.
 * You will get one `Checksum mismatch` warning **per file**. The stored per-file hashes don't match MD5, SHA-1 or SHA-256 of the data, so files can't be verified cryptographically. Check the output structurally instead: every file should be its recorded size (innoextract warns `Unexpected output file size` otherwise), and media files should decode (e.g. `afinfo file.wav` on macOS).
 * Extraction never runs installer code, but the installer's `[Run]`/`[Code]` sections are not reproduced either. You only get the files.
 
-This mode was verified against two Inno Setup 6.4.2 repacks:
+This mode was verified against six Inno Setup 6.4.2 repacks:
 
 | Installer | Loader table | Files | Size | Result |
 |---|---|---|---|---|
 | ~226 MB | stock 32-bit layout | 673 | ~344 MB | all files at recorded size; 212/212 WAVs decode |
+| ~891 MB | wider 64-bit offsets | 2,077 | ~1.2 GB | all files at recorded size; 440/440 WAVs decode |
 | ~894 MB | wider 64-bit offsets | 893 | ~1 GB | all files at recorded size; 282/282 WAVs decode |
+| ~921 MB | wider 64-bit offsets | 1,282 | ~1 GB | all files at recorded size; 420/420 WAV/AIFF files decode |
+| ~1.8 GB | wider 64-bit offsets | 4,543 | ~2.1 GB | all files at recorded size; 457/457 WAV/AIFF files decode |
+| ~2.1 GB | stock 32-bit layout | 2,497 | ~4 GB | all files at recorded size; 650/650 WAVs decode |
 
-After the offset-table fallback was added, the first installer was re-extracted and the output compared byte-for-byte identical to the earlier extraction.
+After the offset-table fallback was added, the first installer was re-extracted and the output compared byte-for-byte identical to the earlier extraction. The ~1.8 GB installer is the one that needed the signature check: with only a bounds check, the misread stock offsets looked valid and innoextract reported `Could not determine setup data version!`.
 
 ## About innoextract
 

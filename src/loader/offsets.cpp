@@ -41,6 +41,21 @@ namespace loader {
 
 namespace {
 
+//! Check whether the setup data ID is at the given offset (used for modified 6.4.2 builds)
+bool has_setup_data_id_at(std::istream & is, boost::uint64_t offset) {
+	static const char id[] = "Inno Setup Setup Data (";
+	char buffer[sizeof(id) - 1];
+	is.seekg(std::streamoff(offset));
+	is.read(buffer, std::streamsize(sizeof(buffer)));
+	bool found = !is.fail() && !memcmp(buffer, id, sizeof(buffer));
+	is.clear();
+	return found;
+}
+
+} // anonymous namespace
+
+namespace {
+
 struct setup_loader_version {
 	
 	unsigned char magic[12];
@@ -205,14 +220,16 @@ bool offsets::load_offsets_at(std::istream & is, boost::uint32_t pos) {
 	if(std::getenv("INNOEXTRACT_MOD642") && version >= INNO_VERSION(5, 1, 5)) {
 		// Some modified 6.4.2 builds keep table revision 1 but widen OffsetEXE, Offset0 and
 		// Offset1 to 64 bits (TotalSize stays 32-bit). Detect this by the stock reading
-		// pointing past the end of the file.
+		// not pointing at the setup data ID. A plain "past the end of the file" check is not
+		// enough: in large installers the misread offsets can still fall inside the file.
 		std::streampos end = is.seekg(0, std::ios_base::end).tellg();
 		if(is.fail() || end < 0) {
 			is.clear();
 			return true;
 		}
 		boost::uint64_t file_size = boost::uint64_t(end);
-		if(header_offset < file_size && data_offset < file_size) {
+		if(header_offset < file_size && data_offset < file_size
+		   && has_setup_data_id_at(is, header_offset)) {
 			return true;
 		}
 		is.seekg(fields_start);
@@ -224,7 +241,7 @@ bool offsets::load_offsets_at(std::istream & is, boost::uint32_t pos) {
 		boost::uint64_t wide_header_offset = util::load<boost::uint64_t>(is);
 		boost::uint64_t wide_data_offset = util::load<boost::uint64_t>(is);
 		if(is.fail() || wide_exe_offset >= file_size || wide_header_offset >= file_size
-		   || wide_data_offset >= file_size) {
+		   || wide_data_offset >= file_size || !has_setup_data_id_at(is, wide_header_offset)) {
 			is.clear();
 			debug("modified 6.4.2 loader header is not plausible either");
 			return true;
